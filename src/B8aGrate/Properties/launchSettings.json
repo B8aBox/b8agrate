@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "B8aGrate": {
+      "commandName": "Project",
+      "commandLineArgs": "--help",
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}

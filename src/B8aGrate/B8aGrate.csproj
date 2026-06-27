@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <PackAsTool>true</PackAsTool>
+        <ToolCommandName>b8agrate</ToolCommandName>
+        <PackageId>B8aGrate</PackageId>
+        <Version>0.18.0</Version>
+        <Description>Lightweight SQL migration CLI with P/PU/V/R/U script conventions for SQL Server and PostgreSQL.</Description>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <EmbeddedResource Include="Templates\**\*.sql"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.2" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9"/>
+        <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9"/>
+        <PackageReference Include="Npgsql" Version="10.0.3"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\B8aGrate.Application\B8aGrate.Application.csproj"/>
+        <ProjectReference Include="..\B8aGrate.Data.Sql\B8aGrate.Data.Sql.csproj"/>
+        <ProjectReference Include="..\B8aGrate.TypeAdapters\B8aGrate.TypeAdapters.csproj"/>
+    </ItemGroup>
+</Project>

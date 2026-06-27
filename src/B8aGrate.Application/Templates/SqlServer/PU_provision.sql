@@ -1,0 +1,12 @@
+-- Provision undo for SQL Server.
+-- Runs through the admin connection when `b8agrate unprovision` is executed.
+-- Keep this paired with P__*.sql and make it safe to rerun where possible.
+
+-- Example:
+-- IF EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'your_app_login')
+--     DROP LOGIN [your_app_login];
+-- GO
+--
+-- IF DB_ID(N'YourDatabase') IS NOT NULL
+--     DROP DATABASE [YourDatabase];
+-- GO

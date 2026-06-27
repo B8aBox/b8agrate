@@ -1,0 +1,12 @@
+-- Provision bootstrap for SQL Server.
+-- Runs through the admin connection before versioned and repeatable migrations.
+-- Keep this script idempotent; only one P__*.sql script is allowed.
+
+-- Example:
+-- IF DB_ID(N'YourDatabase') IS NULL
+--     CREATE DATABASE [YourDatabase];
+-- GO
+--
+-- IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'your_app_login')
+--     CREATE LOGIN [your_app_login] WITH PASSWORD = 'change-me';
+-- GO
