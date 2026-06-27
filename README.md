@@ -2,21 +2,25 @@
 
 **b8agrate** is a lightweight .NET SQL migration CLI for SQL Server and PostgreSQL.
 
-The name is a play on **b8abox** + **migrate**: a database migration tool inside the box.
-
-It uses Flyway-style script names, but includes free undo support:
+It uses Flyway-style script names, adds explicit undo scripts, and stores migration history in the target database:
 
 ```text
-V000001__create_users.sql     # versioned, runs once
-U000001__drop_users.sql       # undo for matching V version
-P__create_database.sql        # provisioning, runs before versioned/repeatable scripts
-PU__drop_database.sql         # provision undo, run explicitly with unprovision
-R__seed_countries.sql         # repeatable, reruns idempotent reference data when checksum changes
+P__bootstrap.sql              # provisioning script, runs before normal migrations
+PU__undo_bootstrap.sql        # provisioning undo script, run explicitly with unprovision
+V000001__create_users.sql     # versioned migration, runs once
+U000001__create_users.sql     # undo for the matching V version
+R__seed_countries.sql         # repeatable migration, reruns when checksum changes
 ```
+
+## Requirements
+
+- .NET 10 SDK for building and packing the tool.
+- SQL Server or PostgreSQL for running migrations.
+- Docker, only when running the Testcontainers integration tests.
 
 ## Install locally
 
-Pack the tool, then install from the local package folder:
+Pack the tool, then install it from the local package folder:
 
 ```bash
 dotnet pack ./src/B8aGrate/B8aGrate.csproj -c Release
@@ -24,8 +28,6 @@ dotnet tool install --global B8aGrate \
   --add-source ./src/B8aGrate/bin/Release \
   --ignore-failed-sources
 ```
-
-`--add-source` adds the local package folder, but NuGet still checks configured package sources. `--ignore-failed-sources` prevents an unavailable private feed from failing the local install.
 
 If the tool is already installed, update it instead:
 
@@ -35,89 +37,104 @@ dotnet tool update --global B8aGrate \
   --ignore-failed-sources
 ```
 
+After installing:
+
+```bash
+b8agrate --help
+```
+
 ## Quick start
 
 ```bash
-b8agrate init --provider sqlserver --path ./db/migrations --full
+b8agrate init
 b8agrate add --name create_users
 b8agrate add --name seed_countries --repeatable
-b8agrate migrate --connection "..."
+export B8AGRATE_CONNECTION="Server=..."
+b8agrate migrate
 ```
 
-`init` creates a `b8agrate.json` file, so later commands can read provider/schema/table defaults from config. The connection string can be passed with `--connection` or with the `B8AGRATE_CONNECTION` environment variable.
+`init` creates `b8agrate.json` in the current directory. Commands read provider, migration path, schema, table, timeout, versioning, and environment variable names from that file.
 
-## Init
+Connection strings can be passed with `--connection` or read from the configured environment variable. By default, that variable is `B8AGRATE_CONNECTION`.
+
+## Configuration
+
+The generated `b8agrate.json` looks like this:
+
+```json
+{
+  "command": {
+    "timeout": 30
+  },
+  "environmentVariables": {
+    "adminConnection": "B8AGRATE_ADMIN_CONNECTION",
+    "connection": "B8AGRATE_CONNECTION"
+  },
+  "migration": {
+    "path": "./data/migrations",
+    "schema": "b8agrate",
+    "table": "Migration"
+  },
+  "provider": "SqlServer",
+  "versioning": {
+    "strategy": "Sequential"
+  }
+}
+```
+
+Important details:
+
+- `migration.path` is resolved relative to the directory where you run `b8agrate`.
+- `migration.schema` and `migration.table` control the history table location.
+- `command.timeout` sets the database command timeout in seconds.
+- `provider` is `SqlServer` or `PostgreSql`.
+- `environmentVariables.connection` and `environmentVariables.adminConnection` name the env vars used when CLI connection flags are omitted.
+
+## Initialize a project
 
 ```bash
-b8agrate init --provider sqlserver --path ./db/migrations
+b8agrate init --provider sqlserver --path ./data/migrations
 ```
 
-Creates:
+Creates `b8agrate.json` in the current directory and creates the configured migrations folder.
 
-```text
-db/
-└── migrations/
-    └── b8agrate.json
-```
-
-Use `--full` to also create sibling folders for seeds and reference data:
+Use `--full` to also create sample SQL templates and a migrations README:
 
 ```bash
-b8agrate init --provider postgres --path ./database/migrations --full
+b8agrate init --provider postgres --path ./data/migrations --full
 ```
 
-Creates:
+With `--full`, the migration folder includes files like:
 
 ```text
-database/
-├── migrations/
-    ├── b8agrate.json
-    ├── README.md
-    ├── VyyyyMMddHHmmss__initial_schema.sql
-    ├── UyyyyMMddHHmmss__drop_initial_schema.sql
-    └── R__seed_countries.sql
+data/migrations/
+├── README.md
+├── P__bootstrap.sql
+├── PU__undo_bootstrap.sql
+├── V000001__initial_schema.sql
+├── U000001__drop_initial_schema.sql
+└── R__seed_countries.sql
 ```
 
-You can also add an optional MSBuild publish target to a project file:
+You can request only part of that scaffolding:
+
+```bash
+b8agrate init --provider sqlserver --path ./data/migrations --with-readme
+b8agrate init --provider sqlserver --path ./data/migrations --with-templates
+```
+
+You can also add a simple MSBuild target to a project file:
 
 ```bash
 b8agrate init \
   --provider sqlserver \
-  --path ./db/migrations \
+  --path ./data/migrations \
   --project ./src/MyApi/MyApi.csproj
 ```
 
-The injected target is disabled by default and only runs when `RunB8aGrateMigrations=true` is passed.
+The injected target runs `b8agrate migrate` after Debug builds.
 
-## Config file
-
-`init` creates this file in the root folder:
-
-```json
-{
-  "environmentVariables": {
-    "connection": "B8AGRATE_CONNECTION",
-    "adminConnection": "B8AGRATE_ADMIN_CONNECTION"
-  },
-  "migration": {
-    "schema": "b8agrate",
-    "table": "Migration",
-  },
-  "provider": "SqlServer"
-}
-```
-
-After that, you can run:
-
-```bash
-export B8AGRATE_CONNECTION="Server=..."
-export B8AGRATE_ADMIN_CONNECTION="Server=...;Database=master;..."
-b8agrate migrate
-```
-
-instead of passing provider/schema/table/connection every time.
-
-## Add migrations
+## Add migration scripts
 
 Create a versioned migration and matching undo script:
 
@@ -128,11 +145,11 @@ b8agrate add --name create_users
 Creates:
 
 ```text
-VyyyyMMddHHmmss__create_users.sql
-UyyyyMMddHHmmss__create_users.sql
+V000001__create_users.sql
+U000001__create_users.sql
 ```
 
-Create only a forward migration:
+Create only the forward versioned migration:
 
 ```bash
 b8agrate add --name create_users --no-undo
@@ -150,336 +167,24 @@ Creates:
 R__seed_countries.sql
 ```
 
-## Core commands
+Create provisioning scripts:
 
 ```bash
-b8agrate migrate --connection "..."
-b8agrate info --connection "..."
-b8agrate validate --connection "..."
-b8agrate undo --connection "..." --steps 1
-b8agrate undo --connection "..." --target 000001
-b8agrate unprovision --connection "..." --admin-connection "..."
-b8agrate baseline --connection "..." --version 000001 --description "existing production database"
-b8agrate repair --connection "..." --remove-failed --update-checksums
-b8agrate adopt --connection "..." --all --dry-run
-b8agrate adopt --connection "..." --up-to 000001 --validate
-b8agrate snapshot --connection "..." --output json
+b8agrate add --name bootstrap --provision
 ```
 
-Use `--provider postgres` or `--provider sqlserver` to override the config value.
-
-Default history location:
+Creates:
 
 ```text
-schema: b8agrate
-table:  Migration
+P__bootstrap.sql
+PU__bootstrap.sql
 ```
 
-Override with:
+Only one `P__*.sql` and one `PU__*.sql` file are allowed in a migration folder.
 
-```bash
---schema custom_schema --table custom_history_table
-```
+## Versioning
 
-## JSON output for pipelines
-
-Every command supports `--output json`:
-
-```bash
-b8agrate migrate --connection "$DATABASE_URL" --output json
-```
-
-Example shape:
-
-```json
-{
-  "command": "migrate",
-  "provider": "PostgreSql",
-  "success": true,
-  "applied": [
-    {
-      "version": "000001",
-      "type": "Versioned",
-      "script": "V000001__create_app_user.sql",
-      "checksum": "...",
-      "executionMs": 142,
-      "dryRun": false
-    }
-  ],
-  "skipped": [],
-  "issues": [],
-  "messages": []
-}
-```
-
-## Production-grade features included
-
-### Baseline
-
-`baseline` marks an existing database as already migrated up to a given version. This is useful when adopting b8agrate on a database that already exists.
-
-```bash
-b8agrate baseline --connection "$DATABASE_URL" --version 000001
-```
-
-This inserts a `Baseline` row into the history table. Future `migrate` runs skip `V` scripts less than or equal to the baseline version.
-
-### Repair
-
-`repair` is for fixing history metadata only. It does **not** run migration SQL.
-
-```bash
-b8agrate repair --connection "$DATABASE_URL" --remove-failed
-b8agrate repair --connection "$DATABASE_URL" --update-checksums
-```
-
-- `--remove-failed` deletes failed rows from the history table.
-- `--update-checksums` updates stored checksums to match local files.
-
-
-### Adopt existing migrations
-
-`adopt` is for bringing an existing database into b8agrate without rerunning scripts that were already applied manually or by another tool.
-
-Unlike `baseline`, which inserts one baseline marker, `adopt` inserts one history row per discovered `V` script. That preserves script-level history and checksums.
-
-Preview adoption without writing history rows:
-
-```bash
-b8agrate adopt --connection "$DATABASE_URL" --all --dry-run
-```
-
-Adopt every discovered versioned migration:
-
-```bash
-b8agrate adopt --connection "$DATABASE_URL" --all
-```
-
-Adopt only scripts up to a version:
-
-```bash
-b8agrate adopt --connection "$DATABASE_URL" --up-to 000001
-```
-
-Validate before adoption:
-
-```bash
-b8agrate adopt --connection "$DATABASE_URL" --all --validate
-```
-
-Validation checks duplicate local versions and conflicts with existing history rows. It does not prove that every SQL object exists in the database; use `--force` only when you know the database already matches those scripts.
-
-Adopted rows are stored with kind `Adopted`, so audit history can distinguish inherited migrations from scripts actually executed by b8agrate. `migrate`, `info`, `validate`, and `undo` treat adopted versioned migrations as effectively applied.
-
-### Snapshot
-
-`snapshot` returns the current migration state for audits and CI/CD.
-
-```bash
-b8agrate snapshot --connection "$DATABASE_URL"
-b8agrate snapshot --connection "$DATABASE_URL" --output json
-```
-
-It reports applied/adopted/baseline/undo rows and pending versioned scripts.
-
-### Provider-specific init templates
-
-`init` creates provider-specific scaffolding from embedded SQL templates.
-
-SQL Server uses syntax like:
-
-```sql
-CHAR(2)
-NVARCHAR(100)
-DATETIME2
-SYSUTCDATETIME()
-GO
-```
-
-PostgreSQL uses syntax like:
-
-```sql
-CHAR(2)
-VARCHAR(100)
-TIMESTAMPTZ
-now()
-ON CONFLICT (code) DO NOTHING
-```
-
-### Undo behavior
-
-Undo scripts are recorded as `Undo` rows. Original `Versioned` rows remain for audit history. The engine calculates the effective applied state by replaying history in order: `Versioned` adds a version; `Undo` removes it.
-
-By default:
-
-```bash
-b8agrate undo --connection "..."
-```
-
-undoes the latest effective versioned migration.
-
-Undo a fixed number of versions:
-
-```bash
-b8agrate undo --connection "..." --steps 2
-```
-
-Undo down to a target version, exclusive:
-
-```bash
-b8agrate undo --connection "..." --target 000001
-```
-
-### Provisioning
-
-Provisioning scripts run before normal `V` and `R` migrations and use the admin connection when one is configured:
-
-```text
-P__create_database_and_roles.sql
-PU__drop_database_and_roles.sql
-```
-
-Use provisioning for database-level setup such as creating databases, logins, roles, users, grants, or provider extensions. Pass the admin connection with `--admin-connection` or `B8AGRATE_ADMIN_CONNECTION`; if omitted, b8agrate uses the normal connection.
-
-```bash
-b8agrate migrate \
-  --connection "$B8AGRATE_CONNECTION" \
-  --admin-connection "$B8AGRATE_ADMIN_CONNECTION"
-```
-
-Only one `P__*.sql` script is allowed. It is bootstrap-only: use it for initial database/user setup before versioned migrations exist. After versioned, adopted, or baseline history exists, new provisioning scripts are rejected. The migration user should handle later target-database changes through `V` scripts.
-
-Provisioning scripts are recorded as `Provision` rows in the same history table. If the target database does not exist yet, b8agrate runs the `P` script first and records it after the normal connection can be opened. Keep the `P` script idempotent so retrying after a partial failure is safe.
-
-Provision undo scripts are intentionally explicit:
-
-```bash
-b8agrate unprovision --connection "$B8AGRATE_CONNECTION" --admin-connection "$B8AGRATE_ADMIN_CONNECTION"
-```
-
-`unprovision` reads the normal history table first, so it needs both the target connection and the admin connection:
-
-```bash
-b8agrate unprovision \
-  --connection "$B8AGRATE_CONNECTION" \
-  --admin-connection "$B8AGRATE_ADMIN_CONNECTION"
-```
-
-`PU` scripts are recorded as `ProvisionUndo` rows when the target database is still reachable after execution.
-
-### Repeatables
-
-Repeatable scripts rerun when their checksum changes. They do not have undo scripts. Keep repeatables limited to idempotent seed/reference-data synchronization. Use versioned migrations for schema objects such as tables, views, functions, and stored procedures.
-
-## SQL Server notes
-
-- Uses `sp_getapplock` for migration locking.
-- Splits scripts on `GO`.
-- Uses `GO` batch separators in generated SQL Server templates.
-
-## PostgreSQL notes
-
-- Uses `pg_advisory_lock` for migration locking.
-- Runs each script as one command by default.
-- Generated templates use `gen_random_uuid()`, which may require `pgcrypto` depending on your PostgreSQL version/configuration.
-
-## Transaction opt-out
-
-By default, scripts run in a transaction. Add this directive in the first 20 lines to opt out:
-
-```sql
--- migrate:transaction=false
-```
-
-## Build / install locally
-
-```bash
-dotnet build ./src/B8aGrate/B8aGrate.csproj
-
-dotnet pack ./src/B8aGrate/B8aGrate.csproj -c Release
-
-dotnet tool install --global --add-source ./src/B8aGrate/bin/Release B8aGrate
-```
-
-After installing:
-
-```bash
-b8agrate --help
-```
-
-## Rider / Visual Studio
-
-Open `b8agrate.sln`, set the CLI project as startup, and pass arguments in the run configuration.
-
-For local dev you can use the optional MSBuild target generated by `init --project`, but avoid automatically running migrations on every build outside dev environments.
-
-Example:
-
-```bash
-dotnet publish ./src/MyApi/MyApi.csproj
-```
-
-## Release pipeline example
-
-```bash
-dotnet tool restore
-export B8AGRATE_CONNECTION="$DATABASE_URL"
-b8agrate validate --output json
-b8agrate migrate --output json
-```
-
-## Production hardening now included
-
-- Testcontainers integration test project for SQL Server and PostgreSQL.
-- `repair --dry-run` to preview failed-row removal and checksum repair.
-- `adopt --validate` object checks for common `CREATE TABLE`, `CREATE VIEW`, `CREATE OR ALTER VIEW`, and PostgreSQL `CREATE OR REPLACE VIEW` patterns.
-- Configurable command timeout through `commandTimeoutSeconds` or `--command-timeout`.
-- Script placeholder replacement from `b8agrate.json`, for example `${schema}`.
-
-
-## Command timeout
-
-Default command timeout is 30 seconds:
-
-```json
-{
-  "commandTimeoutSeconds": 60
-}
-```
-
-You can override it per command:
-
-```bash
-b8agrate migrate --command-timeout 120 --connection "$B8AGRATE_CONNECTION"
-```
-
-## Repair dry run
-
-Preview repair actions without updating the history table:
-
-```bash
-b8agrate repair --remove-failed --update-checksums --dry-run --connection "$B8AGRATE_CONNECTION"
-```
-
-## Integration tests
-
-The `tests/B8aGrate.Tests` project includes Testcontainers-based SQL Server and PostgreSQL tests. Docker must be running locally:
-
-```bash
-dotnet test
-```
-
-## Remaining next hardening steps
-
-- Add GitHub Action and Azure DevOps task wrappers.
-- Add signed NuGet package publishing.
-- Add a lock timeout setting separate from command timeout.
-- Add richer SQL parsing for stored procedures, functions, indexes, triggers, and quoted edge cases.
-- Add provider-specific idempotent helper snippets for common scaffolded migrations.
-
-## Versioning strategies
-
-`b8agrate` now defaults to sequential versions:
+The default generated versioning strategy is sequential:
 
 ```text
 V000001__create_users.sql
@@ -488,26 +193,7 @@ V000002__create_groups.sql
 U000002__create_groups.sql
 ```
 
-The generated `b8agrate.json` includes:
-
-```json
-{
-  "command": {
-    "timeoutSeconds": 30
-  },
-  "migration: {
-    "schema": "b8agrate",
-    "table": "Migration",
-  },
-  "provider": "SqlServer",
-  "versioning": {
-    "strategy": "Sequential",
-    "sequentialWidth": 6
-  }
-}
-```
-
-Supported generated formats:
+Supported generated strategies:
 
 ```text
 Sequential:   V000001__create_users.sql
@@ -516,4 +202,197 @@ DateSequence: V2026061601__create_users.sql
 Repeatable:   R__seed_countries.sql
 ```
 
-Versions are stored as strings in the history table so legacy date-based scripts, timestamp scripts, sequential scripts, and semantic versions can all be parsed.
+Configure strategy in `b8agrate.json`:
+
+```json
+{
+  "versioning": {
+    "strategy": "Sequential",
+    "sequentialWidth": 6
+  }
+}
+```
+
+Versions are stored as strings, and discovered `V`/`U` versions may contain letters, numbers, underscores, periods, and dashes.
+
+## Commands
+
+Run pending versioned migrations and changed repeatables:
+
+```bash
+b8agrate migrate --connection "$DATABASE_URL"
+b8agrate migrate --dry-run --connection "$DATABASE_URL"
+```
+
+Show history and pending scripts:
+
+```bash
+b8agrate info --connection "$DATABASE_URL"
+```
+
+Validate applied checksums against local scripts:
+
+```bash
+b8agrate validate --connection "$DATABASE_URL"
+```
+
+Undo the latest effective versioned migration:
+
+```bash
+b8agrate undo --connection "$DATABASE_URL"
+```
+
+Undo a fixed number of versions:
+
+```bash
+b8agrate undo --steps 2 --connection "$DATABASE_URL"
+```
+
+Undo down to a target version, exclusive:
+
+```bash
+b8agrate undo --target 000001 --connection "$DATABASE_URL"
+```
+
+Mark an existing database as migrated up to a version:
+
+```bash
+b8agrate baseline --version 000001 --description "existing production database" --connection "$DATABASE_URL"
+```
+
+Adopt existing versioned scripts without executing them:
+
+```bash
+b8agrate adopt --all --connection "$DATABASE_URL"
+b8agrate adopt --target 000003 --connection "$DATABASE_URL"
+b8agrate adopt --all --dry-run --connection "$DATABASE_URL"
+```
+
+Repair history metadata:
+
+```bash
+b8agrate repair --remove-failed --connection "$DATABASE_URL"
+b8agrate repair --update-checksums --connection "$DATABASE_URL"
+b8agrate repair --remove-failed --update-checksums --dry-run --connection "$DATABASE_URL"
+```
+
+Return the current migration state for audits or pipelines:
+
+```bash
+b8agrate snapshot --connection "$DATABASE_URL"
+```
+
+Undo provisioning:
+
+```bash
+b8agrate unprovision \
+  --connection "$B8AGRATE_CONNECTION" \
+  --admin-connection "$B8AGRATE_ADMIN_CONNECTION"
+```
+
+Most database commands support `--connection` and `-c`. Commands that run provisioning also support `--admin-connection`.
+
+## JSON output
+
+Commands can render JSON with `--output json`:
+
+```bash
+b8agrate migrate --connection "$DATABASE_URL" --output json
+b8agrate snapshot --connection "$DATABASE_URL" --output json
+```
+
+This is intended for CI/CD pipelines and audit scripts.
+
+## Baseline and adopt
+
+`baseline` inserts a single `Baseline` history row. Future `migrate` runs skip `V` scripts less than or equal to that version.
+
+`adopt` inserts one `Adopted` row per discovered versioned script. This is useful when the database already matches local migration scripts and you want b8agrate history to preserve script-level versions and checksums.
+
+`adopt --dry-run` reports adoption candidates without writing rows. In dry-run mode, discovery and history conflicts are reported in the result instead of failing the command.
+
+## Undo behavior
+
+Undo scripts are recorded as `Undo` rows. Original `Versioned` or `Adopted` rows remain for audit history.
+
+The engine calculates the effective applied state by replaying history in order:
+
+- `Versioned` and `Adopted` add a version.
+- `Undo` removes that version from the effective state.
+- `Baseline` covers versioned scripts less than or equal to the baseline version.
+
+## Provisioning
+
+Provisioning scripts run before normal `V` and `R` migrations and use the admin connection when one is configured:
+
+```text
+P__create_database_and_roles.sql
+PU__drop_database_and_roles.sql
+```
+
+Use provisioning for bootstrap database-level setup such as creating databases, logins, roles, users, grants, or provider extensions.
+
+Pass the admin connection with `--admin-connection` or the configured admin environment variable. By default, that variable is `B8AGRATE_ADMIN_CONNECTION`. If no admin connection is configured, b8agrate uses the normal connection.
+
+Provisioning is bootstrap-only:
+
+- Only one `P__*.sql` script is allowed.
+- If the target database cannot be opened, b8agrate runs `P` through the admin connection, then opens the target connection and records the row.
+- If the target database is already reachable and `P` has not been recorded, `migrate` rejects the pending provision script.
+- Keep `P` scripts idempotent so retrying after a partial failure is safe.
+
+Provision undo scripts are intentionally explicit and run through `unprovision`.
+
+## Repeatables
+
+Repeatable scripts rerun when their checksum changes. They do not have undo scripts.
+
+Use repeatables for idempotent seed or reference-data synchronization. Use versioned migrations for schema changes.
+
+## Transaction behavior
+
+Normal versioned, undo, and repeatable scripts run in a transaction by default.
+
+Add this directive in the first 20 lines to opt out for a script:
+
+```sql
+-- migrate:transaction=false
+```
+
+Provisioning and provision-undo scripts run without wrapping the script in a migration transaction.
+
+## SQL Server notes
+
+- Uses `sp_getapplock` for migration locking.
+- Splits scripts on `GO`.
+- Generated SQL Server templates use `GO` batch separators.
+
+## PostgreSQL notes
+
+- Uses `pg_advisory_lock` for migration locking.
+- Runs each script as one command by default.
+- Generated templates use PostgreSQL-specific syntax such as `TIMESTAMPTZ`, `now()`, and `ON CONFLICT`.
+
+## Build and test
+
+```bash
+dotnet build ./src/B8aGrate/B8aGrate.csproj
+dotnet test
+```
+
+The `tests/B8aGrate.Tests` project includes SQL Server and PostgreSQL integration tests using Testcontainers. Docker must be running locally for those tests.
+
+## Rider / Visual Studio
+
+Open `b8agrate.sln`, set the CLI project as the startup project, and pass command arguments in the run configuration.
+
+For local development, you can use the optional MSBuild target generated by `init --project`, but be deliberate about running migrations automatically as part of builds.
+
+## Release pipeline example
+
+```bash
+export B8AGRATE_CONNECTION="$DATABASE_URL"
+b8agrate validate --output json
+b8agrate migrate --output json
+b8agrate snapshot --output json
+```
