@@ -8,13 +8,14 @@
         <ToolCommandName>b8agrate</ToolCommandName>
         <Authors>b8abox</Authors>
         <Description>Lightweight SQL migration CLI with P/PU/V/R/U script conventions for SQL Server and PostgreSQL.</Description>
+        <PackageIcon>icon.png</PackageIcon>
         <PackageId>b8agrate</PackageId>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageProjectUrl>https://github.com/B8aBox/b8agrate</PackageProjectUrl>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <RepositoryType>git</RepositoryType>
         <RepositoryUrl>https://github.com/B8aBox/b8agrate</RepositoryUrl>
-        <Version>0.19.0</Version>
+        <Version>0.20.0</Version>
     </PropertyGroup>
 
     <ItemGroup>
@@ -23,6 +24,7 @@
 
     <ItemGroup>
         <None Include="..\..\README.md" Pack="true" PackagePath="\"/>
+        <None Include="..\..\assets\icon.png" Pack="true" PackagePath="\"/>
     </ItemGroup>
 
     <ItemGroup>
