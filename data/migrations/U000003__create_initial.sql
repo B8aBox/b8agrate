@@ -1,2 +1,0 @@
--- TODO: Add undo SQL for create_initial.
--- This should reverse V migration create_initial where safely possible.
