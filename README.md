@@ -1,4 +1,4 @@
-# <img src="https://raw.githubusercontent.com/B8aBox/b8agrate/main/assets/icon.png" alt="b8agrate" width="40" align="absmiddle" /> b8agrate
+# <img src="https://raw.githubusercontent.com/B8aBox/b8agrate/main/assets/icon-sm.png" alt="b8agrate" width="40" align="absmiddle" /> b8agrate
 
 **b8agrate** is a lightweight .NET SQL migration CLI for SQL Server and PostgreSQL.
 
