@@ -21,7 +21,7 @@ public abstract class MigrationHandlerBase<TRequest, TResult>(IMigrationReposito
         var connectionStringResult = GetConnectionString(request.ConnectionString, configuration.EnvironmentVariables.Connection);
 
         if (!connectionStringResult.IsValid)
-            return (TResult)Results.Failure(connectionStringResult.Detail);
+            return FailureResult(connectionStringResult.Detail);
 
         var connectionString = connectionStringResult.Content ?? throw new InvalidOperationException("Connection string cannot be retrieved.");
         var migrationRepository = GetMigrationRepository(request, configuration, connectionString);
@@ -153,6 +153,24 @@ public abstract class MigrationHandlerBase<TRequest, TResult>(IMigrationReposito
 
 
     #region Private Methods
+
+    private static TResult FailureResult(IReadOnlyCollection<ResultDetail> details)
+    {
+        if (typeof(TResult) == typeof(Result))
+            return (TResult)Results.Failure(details);
+
+        if (!typeof(TResult).IsGenericType || typeof(TResult).GetGenericTypeDefinition() != typeof(Result<>))
+            throw new NotSupportedException($"Unsupported migration handler result type {typeof(TResult)}.");
+
+        var contentType = typeof(TResult).GetGenericArguments()[0];
+
+        var failureMethod = typeof(Results).GetMethods().Single(method =>
+            method is { Name: nameof(Results.Failure), IsGenericMethodDefinition: true } &&
+            method.GetParameters().Length == 1 &&
+            method.GetParameters()[0].ParameterType == typeof(IReadOnlyCollection<ResultDetail>));
+
+        return (TResult)failureMethod.MakeGenericMethod(contentType).Invoke(null, [details])!;
+    }
 
     private IMigrationRepository GetMigrationRepository(TRequest request, Configuration configuration, string connectionString)
     {

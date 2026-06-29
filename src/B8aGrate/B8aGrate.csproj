@@ -15,7 +15,7 @@
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <RepositoryType>git</RepositoryType>
         <RepositoryUrl>https://github.com/B8aBox/b8agrate</RepositoryUrl>
-        <Version>0.21.0</Version>
+        <Version>0.22.0</Version>
     </PropertyGroup>
 
     <ItemGroup>
